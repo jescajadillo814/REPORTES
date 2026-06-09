@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro de Juntas Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0}
+.header{background:#111;color:#fff;padding:20px;border-bottom:3px solid #2563eb}
+.container{max-width:1100px;margin:auto;padding:20px}
+.card{background:#fff;padding:20px;border-radius:15px;margin-bottom:15px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+input[type=text],textarea{width:100%;padding:10px;border:1px solid #ccc;border-radius:8px}
+button{padding:12px 16px;border:none;border-radius:8px;color:#fff;cursor:pointer;margin:5px}
+.blue{background:#2563eb}.green{background:#15803d}.red{background:#b91c1c}.wa{background:#25D366}.gray{background:#6b7280}
+.preview{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.preview img{width:100px;height:100px;object-fit:cover;border-radius:8px}
+.stats{display:flex;gap:10px;margin-bottom:15px}
+.badge{background:#fff;padding:10px 15px;border-radius:10px}
+.actions{display:flex;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="header">
+<h1>Registro de Juntas</h1>
+</div>
+
+<div class="container">
+
+<div class="card">
+<label><b>RQ</b></label>
+<input type="text" id="rq" placeholder="RQ-0042">
+<p><b>Fecha:</b> <span id="fecha"></span></p>
+<p><b>Hora:</b> <span id="hora"></span></p>
+</div>
+
+<div class="stats">
+<div class="badge">Juntas: <b id="tj">0</b></div>
+<div class="badge">Imágenes: <b id="ti">0</b></div>
+</div>
+
+<div id="juntas"></div>
+
+<button class="blue" onclick="agregarJunta()">➕ Agregar Junta</button>
+
+<div class="card">
+<button class="green" onclick="exportarExcel()">📊 Exportar Excel</button>
+<button class="red" onclick="exportarPDF()">📄 Exportar PDF</button>
+<button class="wa" onclick="compartirPDF()">📱 Compartir PDF</button>
+</div>
+
+</div>
+
+<script>
+function reloj(){
+ const d=new Date();
+ fecha.textContent=d.toLocaleDateString('es-PE');
+ hora.textContent=d.toLocaleTimeString('es-PE');
+}
+setInterval(reloj,1000);reloj();
+
+const cont=document.getElementById('juntas');
+
+function actualizar(){
+ document.getElementById('tj').textContent=document.querySelectorAll('.junta').length;
+ let total=0;
+ document.querySelectorAll('.junta').forEach(j=> total += (j.archivos?.length||0));
+ document.getElementById('ti').textContent=total;
+}
+
+function agregarJunta(){
+ const n=document.querySelectorAll('.junta').length+1;
+ const div=document.createElement('div');
+ div.className='card junta';
+ div.archivos=[];
+
+ div.innerHTML=`
+ <h3>JUNTA #${n}</h3>
+
+ <label>Nombre de la Junta</label>
+ <input type="text" class="nombre">
+
+ <br><br>
+
+ <input type="file" class="galeria" accept="image/*" multiple hidden>
+ <input type="file" class="camara" accept="image/*" capture="environment" hidden>
+
+ <button class="blue btnGaleria">📁 Seleccionar imágenes</button>
+ <button class="gray btnCamara">📷 Tomar foto</button>
+ <button class="red" onclick="eliminarJunta(this)">🗑 Eliminar</button>
+
+ <div class="preview"></div>
+ `;
+
+ cont.appendChild(div);
+
+ const galeria=div.querySelector('.galeria');
+ const camara=div.querySelector('.camara');
+
+ div.querySelector('.btnGaleria').onclick=()=>galeria.click();
+ div.querySelector('.btnCamara').onclick=()=>camara.click();
+
+ galeria.addEventListener('change',e=>cargar(div,e.target.files));
+ camara.addEventListener('change',e=>cargar(div,e.target.files));
+
+ actualizar();
+}
+
+function cargar(div,files){
+ const p=div.querySelector('.preview');
+
+ [...files].forEach(f=>{
+   div.archivos.push(f);
+
+   const r=new FileReader();
+   r.onload=e=>{
+      const img=document.createElement('img');
+      img.src=e.target.result;
+      p.appendChild(img);
+   };
+   r.readAsDataURL(f);
+ });
+
+ actualizar();
+}
+
+function eliminarJunta(btn){
+ btn.closest('.junta').remove();
+ document.querySelectorAll('.junta h3').forEach((e,i)=>e.textContent='JUNTA #'+(i+1));
+ actualizar();
+}
+
+function b64(file){
+ return new Promise(r=>{
+   const fr=new FileReader();
+   fr.onload=()=>r(fr.result);
+   fr.readAsDataURL(file);
+ });
+}
+
+async function exportarExcel(){
+ const wb=new ExcelJS.Workbook();
+ const ws=wb.addWorksheet('Reporte');
+ ws.columns=[
+ {header:'RQ',key:'rq',width:20},
+ {header:'Junta',key:'junta',width:40}
+ ];
+
+ let fila=2;
+ const rq=document.getElementById('rq').value;
+
+ for(const j of document.querySelectorAll('.junta')){
+
+   ws.addRow({
+      rq:rq,
+      junta:j.querySelector('.nombre').value
+   });
+
+   let col=3;
+
+   for(const f of j.archivos){
+      const img=await b64(f);
+
+      const id=wb.addImage({
+        base64:img,
+        extension:f.type.includes('png')?'png':'jpeg'
+      });
+
+      ws.addImage(id,{
+        tl:{col:col,row:fila-1},
+        ext:{width:100,height:100}
+      });
+
+      col++;
+   }
+
+   ws.getRow(fila).height=80;
+   fila++;
+ }
+
+ const buffer=await wb.xlsx.writeBuffer();
+ saveAs(new Blob([buffer]),'Reporte_Juntas.xlsx');
+}
+
+async function crearPDF(){
+ const {jsPDF}=window.jspdf;
+ const pdf=new jsPDF();
+
+ pdf.setFillColor(21,101,192);
+ pdf.rect(0,0,210,25,'F');
+ pdf.setTextColor(255,255,255);
+ pdf.text('REPORTE DE JUNTAS',15,15);
+
+ pdf.setTextColor(0,0,0);
+ let y=35;
+
+ pdf.text('RQ: '+document.getElementById('rq').value,15,y);
+ y+=10;
+
+ for(const [i,j] of [...document.querySelectorAll('.junta')].entries()){
+
+   if(y>220){pdf.addPage();y=20;}
+
+   pdf.text('JUNTA #'+(i+1),15,y);
+   y+=8;
+
+   pdf.text('Nombre: '+j.querySelector('.nombre').value,15,y);
+   y+=10;
+
+   for(const f of j.archivos){
+
+      if(y>190){pdf.addPage();y=20;}
+
+      const img=await b64(f);
+
+      pdf.addImage(
+        img,
+        f.type.includes('png')?'PNG':'JPEG',
+        15,y,60,60
+      );
+
+      y+=70;
+   }
+
+   y+=5;
+ }
+
+ return {pdf,blob:pdf.output('blob')};
+}
+
+async function exportarPDF(){
+ const r=await crearPDF();
+ r.pdf.save('Reporte_Juntas.pdf');
+}
+
+async function compartirPDF(){
+ const r=await crearPDF();
+
+ const archivo=new File([r.blob],'Reporte_Juntas.pdf',{type:'application/pdf'});
+
+ if(navigator.canShare && navigator.canShare({files:[archivo]})){
+    await navigator.share({
+      files:[archivo],
+      title:'Reporte de Juntas'
+    });
+ }else{
+    r.pdf.save('Reporte_Juntas.pdf');
+ }
+}
+
+agregarJunta();
+</script>
+</body>
+</html>
